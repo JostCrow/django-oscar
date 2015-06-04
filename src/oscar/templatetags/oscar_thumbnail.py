@@ -2,11 +2,7 @@ import re
 import logging
 
 from django.conf import settings
-from django.utils.encoding import smart_str
 from django.template import Library, TemplateSyntaxError
-
-RE_SIZE = re.compile(r'(\d+)x(\d+)$')
-kw_pat = re.compile(r'^(?P<key>[\w]+)=(?P<value>.+)$')
 
 register = Library()
 
@@ -31,17 +27,20 @@ def split_args(args):
     return args_dict
 
 
-class ThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
+class OscarThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
+    as_var = context_name = None
+    nodelist_file = None
+    options = []
+    opts = {}
+
     def __init__(self, parser, token):
         args = token.split_contents()
         tag = args[0]
 
+        # Made it possible to use 'as' inside the template
         if len(args) > 4 and args[-2] == 'as':
-            logger.debug(args[-1])
-            self.context_name = args[-1]
+            self.as_var = self.context_name = args[-1]
             args = args[:-2]
-        else:
-            self.context_name = None
 
         if len(args) < 3:
             raise TemplateSyntaxError(
@@ -50,18 +49,12 @@ class ThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
                 "'{%% %s source size [option1 option2 ...] as variable %%}'" %
                 (tag, tag))
 
-        self.opts = {}
-
         # The first argument is the source file.
-        self.source_var = parser.compile_filter(args[1])
+        self.file_ = self.source_var = parser.compile_filter(args[1])
 
         # The second argument is the requested size. If it's the static "10x10"
         # format, wrap it in quotes so that it is compiled correctly.
-        size = args[2]
-        match = RE_SIZE.match(size)
-        if match:
-            size = '"%s"' % size
-        self.opts['size'] = parser.compile_filter(size)
+        self.geometry = self.opts['size'] = parser.compile_filter(args[2])
 
         # All further arguments are options.
         args_list = split_args(args[3:]).items()
@@ -69,32 +62,7 @@ class ThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
             if value and value is not True:
                 value = parser.compile_filter(value)
             self.opts[arg] = value
-
-        self.file_ = parser.compile_filter(args[1])
-        self.geometry = parser.compile_filter(args[2])
-        self.options = []
-        self.as_var = self.context_name
-        self.nodelist_file = None
-
-        if args[-2] == 'as':
-            options_args = args[3:-2]
-        else:
-            options_args = args[3:]
-
-        for bit in options_args:
-            m = kw_pat.match(bit)
-            if not m:
-                raise TemplateSyntaxError(self.error_msg)
-            key = smart_str(m.group('key'))
-            expr = parser.compile_filter(m.group('value'))
-            self.options.append((key, expr))
-
-        if args[-2] == 'as':
-            # self.as_var = args[-1]
-            self.nodelist_file = parser.parse(('empty', 'endthumbnail',))
-            if parser.next_token().contents == 'empty':
-                self.nodelist_empty = parser.parse(('endthumbnail',))
-                parser.delete_first_token()
+            self.options.append((arg, value))
 
 
 @register.tag(name="oscar_thumbnail")
@@ -104,7 +72,7 @@ def oscar_thumbnail(parser, token):
 
     The default thumbnail will be the one from sorl thumbnail.
     """
-    node = ThumbnailNode(parser, token)
+    node = OscarThumbnailNode(parser, token)
     logger.debug(node)
     for a in dir(node):
         logger.debug(a)
