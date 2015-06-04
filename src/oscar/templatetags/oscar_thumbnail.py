@@ -1,4 +1,5 @@
 import re
+import logging
 
 from django.conf import settings
 from django.utils.encoding import smart_str
@@ -8,6 +9,8 @@ RE_SIZE = re.compile(r'(\d+)x(\d+)$')
 kw_pat = re.compile(r'^(?P<key>[\w]+)=(?P<value>.+)$')
 
 register = Library()
+
+logger = logging.getLogger('oscar.thumbnail_template')
 
 
 def split_args(args):
@@ -34,6 +37,7 @@ class ThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
         tag = args[0]
 
         if len(args) > 4 and args[-2] == 'as':
+            logger.debug(args[-1])
             self.context_name = args[-1]
             args = args[:-2]
         else:
@@ -69,7 +73,7 @@ class ThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
         self.file_ = parser.compile_filter(args[1])
         self.geometry = parser.compile_filter(args[2])
         self.options = []
-        self.as_var = None
+        self.as_var = self.context_name
         self.nodelist_file = None
 
         if args[-2] == 'as':
@@ -86,7 +90,7 @@ class ThumbnailNode(settings.OSCAR_THUMBNAIL_NODE):
             self.options.append((key, expr))
 
         if args[-2] == 'as':
-            self.as_var = args[-1]
+            # self.as_var = args[-1]
             self.nodelist_file = parser.parse(('empty', 'endthumbnail',))
             if parser.next_token().contents == 'empty':
                 self.nodelist_empty = parser.parse(('endthumbnail',))
@@ -100,4 +104,8 @@ def oscar_thumbnail(parser, token):
 
     The default thumbnail will be the one from sorl thumbnail.
     """
-    return ThumbnailNode(parser, token)
+    node = ThumbnailNode(parser, token)
+    logger.debug(node)
+    for a in dir(node):
+        logger.debug(a)
+    return node
